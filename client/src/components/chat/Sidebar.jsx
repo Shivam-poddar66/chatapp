@@ -39,7 +39,10 @@ export default function Sidebar({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const displayedList = searchQuery.trim() ? searchResults : contacts;
+  const rawList = searchQuery.trim() ? searchResults : contacts;
+  const displayedList = Array.from(
+    new Map(rawList.map((item) => [Number(item.id), item])).values()
+  );
 
   return (
     <div className="w-full md:w-80 lg:w-96 h-full flex flex-col bg-white border-r border-gray-200 select-none">

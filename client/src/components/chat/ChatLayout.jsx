@@ -16,8 +16,10 @@ export default function ChatLayout() {
     try {
       setIsLoadingContacts(true);
       const list = await chatService.getContacts();
-      setContacts(list);
-      initPresence(list);
+      // Ensure unique contacts by ID
+      const uniqueList = Array.from(new Map(list.map((c) => [Number(c.id), c])).values());
+      setContacts(uniqueList);
+      initPresence(uniqueList);
     } catch (err) {
       console.error('Failed to load contacts:', err);
     } finally {
@@ -32,11 +34,7 @@ export default function ChatLayout() {
   // Handle updates from incoming/outgoing messages
   const handleContactUpdate = useCallback((message) => {
     setContacts((prev) => {
-      const otherUserId = Number(
-        message.senderId === activeContact?.id ? message.senderId : message.recipientId
-      );
-
-      return prev.map((c) => {
+      const updated = prev.map((c) => {
         if (Number(c.id) === Number(message.senderId) || Number(c.id) === Number(message.recipientId)) {
           const isActiveChat = activeContact && Number(activeContact.id) === Number(message.senderId);
           const currentUnread = Number(c.unread_count) || 0;
@@ -50,15 +48,26 @@ export default function ChatLayout() {
         }
         return c;
       });
+
+      // Sort so contact with newest message floats to the top
+      return updated.sort((a, b) => {
+        const timeA = a.last_message_time ? new Date(a.last_message_time).getTime() : 0;
+        const timeB = b.last_message_time ? new Date(b.last_message_time).getTime() : 0;
+        return timeB - timeA;
+      });
     });
   }, [activeContact]);
 
   const handleSelectContact = (contact) => {
     setActiveContact(contact);
-    // Reset unread count locally for selected contact
-    setContacts((prev) =>
-      prev.map((c) => (c.id === contact.id ? { ...c, unread_count: 0 } : c))
-    );
+    // Reset unread count locally for selected contact and ensure no duplicates
+    setContacts((prev) => {
+      const exists = prev.some((c) => Number(c.id) === Number(contact.id));
+      const next = exists
+        ? prev.map((c) => (Number(c.id) === Number(contact.id) ? { ...c, unread_count: 0 } : c))
+        : [{ ...contact, unread_count: 0 }, ...prev];
+      return Array.from(new Map(next.map((c) => [Number(c.id), c])).values());
+    });
   };
 
   return (

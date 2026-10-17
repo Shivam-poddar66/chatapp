@@ -67,30 +67,43 @@ class User {
                 u.avatar, 
                 u.status, 
                 u.last_seen_at,
-                c.id AS conversation_id,
+                convo.conversation_id,
                 lm.id AS last_message_id,
                 lm.masked_content AS last_message,
                 lm.sender_id AS last_message_sender_id,
                 lm.created_at AS last_message_time,
                 lm.status AS last_message_status,
-                (
-                    SELECT COUNT(*) 
-                    FROM messages m2
-                    WHERE m2.conversation_id = c.id 
-                      AND m2.sender_id = u.id 
-                      AND m2.status != 'read'
-                ) AS unread_count
+                COALESCE(unread.unread_count, 0) AS unread_count
             FROM users u
-            LEFT JOIN conversation_participants cp1 ON cp1.user_id = ?
-            LEFT JOIN conversation_participants cp2 ON cp2.user_id = u.id AND cp2.conversation_id = cp1.conversation_id
-            LEFT JOIN conversations c ON c.id = cp1.conversation_id AND c.type = 'private'
+            LEFT JOIN (
+                SELECT 
+                    cp1.conversation_id, 
+                    cp2.user_id AS other_user_id
+                FROM conversation_participants cp1
+                JOIN conversation_participants cp2 
+                    ON cp1.conversation_id = cp2.conversation_id 
+                   AND cp2.user_id != cp1.user_id
+                JOIN conversations c 
+                    ON c.id = cp1.conversation_id 
+                   AND c.type = 'private'
+                WHERE cp1.user_id = ?
+            ) convo ON convo.other_user_id = u.id
             LEFT JOIN messages lm ON lm.id = (
                 SELECT m.id 
                 FROM messages m 
-                WHERE m.conversation_id = c.id 
+                WHERE m.conversation_id = convo.conversation_id 
                 ORDER BY m.id DESC 
                 LIMIT 1
             )
+            LEFT JOIN (
+                SELECT 
+                    m.conversation_id, 
+                    m.sender_id, 
+                    COUNT(*) AS unread_count
+                FROM messages m
+                WHERE m.status != 'read'
+                GROUP BY m.conversation_id, m.sender_id
+            ) unread ON unread.conversation_id = convo.conversation_id AND unread.sender_id = u.id
             WHERE u.id != ?
             ORDER BY COALESCE(lm.created_at, u.created_at) DESC
         `;
